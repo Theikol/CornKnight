@@ -42,14 +42,33 @@
         <div id="menu-emblem"><i data-lucide="swords" style="width: 80px; height: 80px; stroke-width: 1.5px;"></i></div>
         <h1 id="menu-title">KING ARDENWYR</h1>
         <h2 id="menu-subtitle">Sang Ksatria Pedagang Jagung </h2>
-        <div id="menu-buttons">
+
+        <div id="menu-config">
+          <div class="config-card">
+            <div class="config-title">Difficulty</div>
+            <div class="config-options" id="difficulty-options">
+              <button class="config-btn" type="button" data-difficulty="easy">Easy</button>
+              <button class="config-btn" type="button" data-difficulty="normal">Normal</button>
+              <button class="config-btn" type="button" data-difficulty="hard">Hard</button>
+              <button class="config-btn" type="button" data-difficulty="insane">Insane</button>
+            </div>
+          </div>
+
+          <div class="config-card">
+            <div class="config-title">Skin</div>
+            <div class="config-options" id="skin-options"></div>
+            <div class="config-hint" id="skin-hint">Unlock skin akan muncul di sini.</div>
+          </div>
+        </div>
+
+        <div id="menu-buttons" style="margin-top: 1rem;">
           <button class="menu-btn" id="btn-play"><i data-lucide="swords" class="icon"></i> Mulai Petualangan</button>
           <button class="menu-btn" id="btn-controls"><i data-lucide="gamepad-2" class="icon"></i> Panduan
             Kontrol</button>
           <button class="menu-btn" id="btn-lore"><i data-lucide="book-open" class="icon"></i> Legenda</button>
         </div>
+        <div id="menu-footer">King Ardenwyr · Mang Ian</div>
       </div>
-      <div id="menu-footer">King Ardenwyr · Mang Ian</div>
     </div>
 
     <!-- Controls Screen -->
@@ -118,16 +137,21 @@
             <div id="hud-sword-stars"></div>
             <div id="hud-sword-name"></div>
           </div>
-        </div>
-        <div id="hud-center">
-          <div id="hud-stage-label">STAGE</div>
-          <div id="hud-stage-num"></div>
+          <div id="hud-skin-info">
+            <div id="hud-skin-label">SKIN</div>
+            <div id="hud-skin-name"></div>
+          </div>
+          <div id="hud-center" style="margin-top: 0.5rem;">
+            <div id="hud-stage-label">STAGE</div>
+            <div id="hud-stage-num"></div>
+          </div>
         </div>
         <div id="hud-right">
           <div id="hud-score-label">NILAI</div>
           <div id="hud-score-num">0</div>
           <div id="hud-kill-label">MUSUH GUGUR</div>
           <div id="hud-kill-num">0</div>
+          <div id="hud-diff-badge"></div>
           <button id="btn-mute" title="Toggle Mute"><i data-lucide="volume-2" id="mute-icon"></i></button>
         </div>
       </div>

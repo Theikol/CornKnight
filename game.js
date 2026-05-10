@@ -69,6 +69,22 @@ const state = {
   paused: false,
   storyIndex: 0,
   pendingScreen: 'game',
+
+  difficulty: 'normal',
+  selectedSkin: 'default',
+
+  // Progression (persist per user/device)
+  totalStagesCleared: 0,
+  bossObsidianDefeated: 0,
+  bossMalacharDefeated: 0,
+  maxStageReached: 1,
+  unlockedSkins: {
+    default: true,
+    praajurit: false,
+    ksatria: false,
+    sangraja: false,
+    sangdewa: false,
+  },
 };
 
 // ─── INPUT ────────────────────────────────────────────────────────────────────
@@ -483,8 +499,19 @@ const ENEMY_TYPES = {
 
 function spawnEnemy(type, x) {
   const t = ENEMY_TYPES[type];
+  const mult = getEnemyDifficultyMultipliers();
+  const hp = Math.round(t.hp * (mult.hp));
+  const maxHp = Math.round(t.maxHp * (mult.hp));
+  const dmg = Math.round(t.dmg * (mult.dmg));
+  const speed = t.speed * mult.speed;
+
   enemies.push({
-    ...t, type,
+    ...t,
+    hp,
+    maxHp,
+    dmg,
+    speed,
+    type,
     x, y: GROUND_Y,
     vx: 0, vy: 0,
     onGround: false,
@@ -604,6 +631,162 @@ function updateCamera() {
   bgOffset = camX;
 }
 
+// ─── DIFFICULTY & PROGRESSION ───────────────────────────────────────────────
+function getDeviceKey() {
+  // Persist per user/device. IP asli butuh server-side.
+  // Gunakan proxy identifier: hostname + userAgent (agar beda device biasanya beda progress).
+  return `ardenwyr:${location.hostname}:${(navigator.userAgent || '').slice(0, 80)}`;
+}
+
+function loadProgress() {
+  try {
+    const key = `ardenwyr_progress_v1:${getDeviceKey()}`;
+    const raw = localStorage.getItem(key);
+    if (!raw) return;
+    const data = JSON.parse(raw);
+    if (data && typeof data === 'object') {
+      state.totalStagesCleared = Number(data.totalStagesCleared || 0);
+      state.maxStageReached = Number(data.maxStageReached || 1);
+      state.bossObsidianDefeated = Number(data.bossObsidianDefeated || 0);
+      state.bossMalacharDefeated = Number(data.bossMalacharDefeated || 0);
+      state.unlockedSkins = {
+        default: true,
+        praajurit: !!data.unlockedSkins?.praajurit,
+        ksatria: !!data.unlockedSkins?.ksatria,
+        sangraja: !!data.unlockedSkins?.sangraja,
+        sangdewa: !!data.unlockedSkins?.sangdewa,
+      };
+      state.selectedSkin = data.selectedSkin || state.selectedSkin;
+      if (!state.unlockedSkins[state.selectedSkin]) state.selectedSkin = 'default';
+    }
+  } catch (e) {
+    // ignore
+  }
+}
+
+function saveProgress() {
+  try {
+    const key = `ardenwyr_progress_v1:${getDeviceKey()}`;
+    localStorage.setItem(key, JSON.stringify({
+      totalStagesCleared: state.totalStagesCleared,
+      maxStageReached: state.maxStageReached,
+      bossObsidianDefeated: state.bossObsidianDefeated,
+      bossMalacharDefeated: state.bossMalacharDefeated,
+      unlockedSkins: state.unlockedSkins,
+      selectedSkin: state.selectedSkin,
+    }));
+  } catch (e) {
+    // ignore
+  }
+}
+
+const SKINS = {
+  default: { name: 'Penjual Jagung', cape: '#8b1a1a', tabard: '#c9a84c', headband: '#8b1a1a', armor: '#3a2010', helm: '#221100', eyes: '#ff2200' },
+  praajurit: { name: 'Prajurit', cape: '#330015', tabard: '#887766', headband: '#660033', armor: '#1a0010', helm: '#2a2a3e', eyes: '#88ff88' },
+  ksatria: { name: 'Ksatria', cape: '#1a1020', tabard: '#c9a84c', headband: '#4455aa', armor: '#110a05', helm: '#e8d5a3', eyes: '#44ccff' },
+  sangraja: { name: 'Sang Raja', cape: '#2a1a00', tabard: '#ffcc00', headband: '#7a5c1a', armor: '#3a2010', helm: '#f0d070', eyes: '#ffcc44' },
+  sangdewa: { name: 'Sang Dewa', cape: '#660033', tabard: '#e8d5a3', headband: '#ffcc00', armor: '#110008', helm: '#fff8d6', eyes: '#ff5533' },
+};
+
+function getSkin() {
+  const sk = SKINS[state.selectedSkin] || SKINS.default;
+  return sk;
+}
+
+function maybeUnlockSkins() {
+  const cleared = state.totalStagesCleared;
+  const maxStage = state.maxStageReached;
+
+  if (maxStage >= 5) state.unlockedSkins.praajurit = true;
+  if (maxStage >= 7) state.unlockedSkins.ksatria = true;
+  if (cleared >= 32) state.unlockedSkins.sangraja = true;
+
+  if (state.bossObsidianDefeated >= 5 && state.bossMalacharDefeated >= 5) {
+    state.unlockedSkins.sangdewa = true;
+  }
+
+  // auto pick first unlocked if current invalid
+  if (!state.unlockedSkins[state.selectedSkin]) {
+    if (state.unlockedSkins.sangdewa) state.selectedSkin = 'sangdewa';
+    else if (state.unlockedSkins.sangraja) state.selectedSkin = 'sangraja';
+    else if (state.unlockedSkins.ksatria) state.selectedSkin = 'ksatria';
+    else if (state.unlockedSkins.praajurit) state.selectedSkin = 'praajurit';
+    else state.selectedSkin = 'default';
+  }
+}
+
+// Skin unlock notification — defined immediately after maybeUnlockSkins so it's
+// available when killEnemy / showStageClear call maybeUnlockSkinsWithNotif.
+let skinUnlockNotif = null;
+let skinUnlockTimer = 0;
+function showSkinUnlockNotif(skinKey) {
+  const sk = SKINS[skinKey];
+  if (!sk) return;
+  skinUnlockNotif = sk.name;
+  skinUnlockTimer = 240; // ~4 seconds at 60fps
+}
+function drawSkinUnlockNotif() {
+  if (!skinUnlockNotif || skinUnlockTimer <= 0) return;
+  skinUnlockTimer--;
+  const alpha = skinUnlockTimer > 180 ? (240 - skinUnlockTimer) / 60 : Math.min(1, skinUnlockTimer / 60);
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  ctx.fillStyle = 'rgba(0,0,0,0.7)';
+  const bw = 420, bh = 52;
+  const bx = (W - bw) / 2, by = H - 80;
+  ctx.fillRect(bx, by, bw, bh);
+  ctx.strokeStyle = '#c9a84c';
+  ctx.lineWidth = 2;
+  ctx.strokeRect(bx, by, bw, bh);
+  ctx.font = 'bold 16px Cinzel, serif';
+  ctx.fillStyle = '#f0d070';
+  ctx.shadowColor = '#f0d070';
+  ctx.shadowBlur = 10;
+  ctx.textAlign = 'center';
+  ctx.fillText('\ud83c\udfc6 SKIN TERBUKA: ' + skinUnlockNotif.toUpperCase(), W / 2, by + bh / 2 + 6);
+  ctx.restore();
+}
+function maybeUnlockSkinsWithNotif() {
+  const before = { ...state.unlockedSkins };
+  maybeUnlockSkins();
+  for (const key of Object.keys(state.unlockedSkins)) {
+    if (state.unlockedSkins[key] && !before[key]) {
+      showSkinUnlockNotif(key);
+    }
+  }
+}
+
+function applyDifficulty(applyToPlayer = false) {
+  const d = state.difficulty || 'normal';
+
+  // enemy multipliers applied during spawn (lightweight) via global variables
+  // (karena ENEMY_TYPES konstanta, kita skalakan instance HP/dmg di spawnEnemy)
+  if (!applyToPlayer) {
+    return;
+  }
+
+  // Apply player HP multiplier after resetPlayer()
+  const baseMaxHp = 200;
+  let hpMult = 1;
+  if (d === 'easy') hpMult = 1.35;
+  else if (d === 'hard') hpMult = 0.8;
+  else if (d === 'insane') hpMult = 0.65;
+
+  player.maxHp = Math.round(baseMaxHp * hpMult);
+  player.hp = player.hp > 0 ? Math.min(player.hp, player.maxHp) : player.maxHp;
+}
+
+function getEnemyDifficultyMultipliers() {
+  const d = state.difficulty || 'normal';
+  if (d === 'easy') return { hp: 0.78, dmg: 0.78, speed: 0.95 };
+  if (d === 'hard') return { hp: 1.35, dmg: 1.25, speed: 1.05 };
+  if (d === 'insane') return { hp: 1.75, dmg: 1.5, speed: 1.12 };
+  return { hp: 1, dmg: 1, speed: 1 };
+}
+
+let skinRenderOverride = null;
+
+
 // ─── PLAYER UPDATE ────────────────────────────────────────────────────────────
 const ACTION_NAMES = {
   slash: { label: '⚔ TEBAS', color: '#ffcc44' },
@@ -679,7 +862,6 @@ function updatePlayer(dt) {
       const sx = player.facingRight ? player.x + player.w : player.x - 70;
       spawnSlash(sx, player.y - player.h, 70, player.h * 1.2, player.facingRight, dmg, 'heavy', 8);
       spawnParticles(player.x - camX + (player.facingRight ? 40 : -40), player.y - player.h * 0.5, sword.color, 15, 6);
-      player.comboCount++; player.comboTimer = 120; comboDisplayTimer = 90;
       showActionLabel('heavySlash'); state.score += 5; player.animState = 'attack';
       AudioManager.play('heavySlash');
 
@@ -690,7 +872,6 @@ function updatePlayer(dt) {
       const dmg = Math.round(sword.dmg * 1.8);
       spawnSlash(player.x - 50, player.y - player.h, 100, player.h, player.facingRight, dmg, 'spin', 6);
       spawnParticles(player.x - camX, player.y - player.h * 0.5, sword.color, 20, 7);
-      player.comboCount++; player.comboTimer = 120; comboDisplayTimer = 90;
       showActionLabel('spinSlash'); state.score += 5; player.animState = 'attack';
       AudioManager.play('spinSlash');
 
@@ -702,7 +883,6 @@ function updatePlayer(dt) {
       const sx = player.facingRight ? player.x + player.w * 0.5 : player.x - 55;
       spawnSlash(sx, player.y - player.h, 55, player.h, player.facingRight, dmg, 'slash', 4);
       spawnParticles(player.x - camX + (player.facingRight ? 35 : -35), player.y - player.h * 0.5, sword.color, 6, 4);
-      player.comboCount++; player.comboTimer = 120; comboDisplayTimer = 90;
       showActionLabel('slash'); state.score += 2; player.animState = 'attack';
       AudioManager.play('slash');
 
@@ -721,7 +901,6 @@ function updatePlayer(dt) {
         spawnParticles(player.x - camX + (player.facingRight ? 40 : -40), player.y - player.h * 0.5, sword.color, 8, 5);
       }, 200);
       spawnParticles(player.x - camX + (player.facingRight ? 35 : -35), player.y - player.h * 0.5, sword.color, 8, 5);
-      player.comboCount++; player.comboTimer = 120; comboDisplayTimer = 90;
       showActionLabel('doubleSlash'); state.score += 4; player.animState = 'attack';
       AudioManager.play('doubleSlash');
     }
@@ -763,6 +942,11 @@ function updatePlayer(dt) {
         e.stunTimer = 20;
         e.vx += s.knockback;
         e._hitBySlashId = s.id;
+        
+        player.comboCount++;
+        player.comboTimer = 120;
+        comboDisplayTimer = 90;
+
         const dColor = isCrit ? '#ff4444' : sword.color;
         spawnDmgNum(e.x - camX, e.y - e.h - 10, finalDmg, dColor, isCrit);
         spawnParticles(e.x - camX, e.y - e.h / 2, '#cc2222', 6, 4);
@@ -814,6 +998,19 @@ function killEnemy(e) {
   state.totalKills++;
   state.stageKills++;
   state.killsSinceUpgrade++;
+
+  // Boss progression
+  if (e.type === 'bossObsidian') {
+    state.bossObsidianDefeated++;
+    saveProgress();
+    maybeUnlockSkinsWithNotif();
+  }
+  if (e.type === 'bossMalachar') {
+    state.bossMalacharDefeated++;
+    saveProgress();
+    maybeUnlockSkinsWithNotif();
+  }
+
   spawnParticles(e.x - camX, e.y - e.h / 2, '#cc2222', 14, 6);
   spawnParticles(e.x - camX, e.y - e.h / 2, '#ffcc44', 6, 3);
   AudioManager.play('enemyDeath');
@@ -920,6 +1117,8 @@ function drawPlayer() {
   const cx = p.x - camX;
   const cy = p.y;
   const sword = SWORD_DATA[state.swordLevel];
+  const skin = getSkin();
+  const skinKey = state.selectedSkin;
 
   drawShadow(p.x, GROUND_Y + 3, p.w * 0.9);
   if (p.invTimer > 0 && Math.floor(p.invTimer / 4) % 2 === 1) return;
@@ -934,13 +1133,47 @@ function drawPlayer() {
   ctx.lineCap = 'round';
   ctx.lineJoin = 'round';
 
+  // ── Sang Dewa: divine aura behind character ──
+  if (skinKey === 'sangdewa') {
+    ctx.save();
+    const auraPhase = Date.now() / 600;
+    ctx.globalAlpha = 0.12 + 0.08 * Math.sin(auraPhase);
+    ctx.fillStyle = '#ffcc00';
+    ctx.shadowColor = '#ffcc00';
+    ctx.shadowBlur = 30;
+    ctx.beginPath();
+    ctx.ellipse(0, -p.h * 0.45, p.w * 1.2, p.h * 0.65, 0, 0, Math.PI * 2);
+    ctx.fill();
+    // Inner divine glow
+    ctx.globalAlpha = 0.08 + 0.06 * Math.sin(auraPhase * 1.7);
+    ctx.fillStyle = '#ff5533';
+    ctx.shadowColor = '#ff5533';
+    ctx.shadowBlur = 20;
+    ctx.beginPath();
+    ctx.ellipse(0, -p.h * 0.45, p.w * 0.7, p.h * 0.45, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  }
+
   // Cape
-  ctx.fillStyle = '#8b1a1a';
+  ctx.fillStyle = skin.cape;
   ctx.beginPath();
   ctx.moveTo(-6, -p.h + 14);
   ctx.quadraticCurveTo(-20, -p.h + 20 + runOff, -15 - runOff * 1.5, -5);
   ctx.lineTo(-5, -5);
   ctx.fill();
+
+  // ── Sang Raja & Sang Dewa: longer royal cape ──
+  if (skinKey === 'sangraja' || skinKey === 'sangdewa') {
+    ctx.fillStyle = skinKey === 'sangdewa' ? '#440022' : '#1a0a00';
+    ctx.globalAlpha = 0.6;
+    ctx.beginPath();
+    ctx.moveTo(-8, -p.h + 16);
+    ctx.quadraticCurveTo(-28, -p.h + 26 + runOff, -22 - runOff * 1.2, 0);
+    ctx.lineTo(-6, 0);
+    ctx.fill();
+    ctx.globalAlpha = 1;
+  }
 
   // Back Leg
   ctx.strokeStyle = '#1a0f05'; ctx.lineWidth = 6;
@@ -949,21 +1182,164 @@ function drawPlayer() {
   ctx.strokeStyle = '#2a1a0a'; ctx.lineWidth = 6;
   ctx.beginPath(); ctx.moveTo(3, -20); ctx.lineTo(6 - runOff, -4); ctx.stroke();
 
+  // ── Ksatria / Sang Raja / Sang Dewa: leg armor (greaves) ──
+  if (skinKey === 'ksatria' || skinKey === 'sangraja' || skinKey === 'sangdewa') {
+    ctx.strokeStyle = skin.headband; ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.moveTo(-4, -14); ctx.lineTo(-6 + runOff * 0.5, -6); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(4, -14); ctx.lineTo(6 - runOff * 0.5, -6); ctx.stroke();
+  }
+
   // Torso
-  ctx.fillStyle = '#3a2010';
+  ctx.fillStyle = skin.armor;
   ctx.beginPath(); ctx.moveTo(-7, -p.h + 14); ctx.lineTo(7, -p.h + 14); ctx.lineTo(5, -20); ctx.lineTo(-5, -20); ctx.closePath(); ctx.fill();
 
   // Armor Tabard
-  ctx.fillStyle = '#c9a84c';
+  ctx.fillStyle = skin.tabard;
   ctx.fillRect(-4, -p.h + 14, 8, 18);
+
+  // ── Prajurit: shoulder armor pads ──
+  if (skinKey === 'praajurit') {
+    ctx.fillStyle = skin.headband;
+    ctx.beginPath(); ctx.arc(-7, -p.h + 14, 5, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(7, -p.h + 14, 5, 0, Math.PI * 2); ctx.fill();
+  }
+
+  // ── Ksatria: chest emblem ──
+  if (skinKey === 'ksatria') {
+    ctx.fillStyle = '#4455aa';
+    ctx.shadowColor = '#4455aa';
+    ctx.shadowBlur = 5;
+    ctx.beginPath();
+    ctx.moveTo(0, -p.h + 17);
+    ctx.lineTo(-3, -p.h + 22);
+    ctx.lineTo(0, -p.h + 26);
+    ctx.lineTo(3, -p.h + 22);
+    ctx.closePath();
+    ctx.fill();
+    ctx.shadowBlur = 0;
+  }
+
+  // ── Sang Raja: royal chest insignia ──
+  if (skinKey === 'sangraja') {
+    ctx.fillStyle = '#ffcc00';
+    ctx.shadowColor = '#ffcc00';
+    ctx.shadowBlur = 6;
+    ctx.beginPath();
+    ctx.arc(0, -p.h + 22, 3, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.shadowBlur = 0;
+  }
+
+  // ── Sang Dewa: divine chest rune ──
+  if (skinKey === 'sangdewa') {
+    const runeGlow = 0.5 + 0.5 * Math.sin(Date.now() / 400);
+    ctx.save();
+    ctx.globalAlpha = runeGlow;
+    ctx.fillStyle = '#ff5533';
+    ctx.shadowColor = '#ff5533';
+    ctx.shadowBlur = 8;
+    ctx.beginPath();
+    ctx.moveTo(0, -p.h + 16);
+    ctx.lineTo(-4, -p.h + 22);
+    ctx.lineTo(0, -p.h + 28);
+    ctx.lineTo(4, -p.h + 22);
+    ctx.closePath();
+    ctx.fill();
+    ctx.shadowBlur = 0;
+    ctx.restore();
+  }
 
   // Head
   ctx.fillStyle = '#e8d5a3';
   ctx.beginPath(); ctx.arc(0, -p.h + 6, 8, 0, Math.PI * 2); ctx.fill();
 
-  // Headband and Hair
-  ctx.fillStyle = '#8b1a1a'; ctx.fillRect(-8, -p.h + 2, 16, 4);
-  ctx.fillStyle = '#221100'; ctx.beginPath(); ctx.arc(0, -p.h + 4, 8, Math.PI, Math.PI * 2); ctx.fill();
+  // Headband and Hair/Helmet
+  ctx.fillStyle = skin.headband;
+  ctx.fillRect(-8, -p.h + 2, 16, 4);
+  ctx.fillStyle = skin.helm;
+  ctx.beginPath(); ctx.arc(0, -p.h + 4, 8, Math.PI, Math.PI * 2); ctx.fill();
+
+  // ── Ksatria: knight helmet crest ──
+  if (skinKey === 'ksatria') {
+    ctx.fillStyle = '#4455aa';
+    ctx.beginPath();
+    ctx.moveTo(-2, -p.h - 2);
+    ctx.lineTo(0, -p.h - 10);
+    ctx.lineTo(2, -p.h - 2);
+    ctx.closePath();
+    ctx.fill();
+    // Visor slit
+    ctx.fillStyle = '#112244';
+    ctx.fillRect(-5, -p.h + 5, 10, 2);
+  }
+
+  // ── Sang Raja: golden crown ──
+  if (skinKey === 'sangraja') {
+    ctx.fillStyle = '#ffcc00';
+    ctx.shadowColor = '#ffcc00';
+    ctx.shadowBlur = 8;
+    ctx.beginPath();
+    ctx.moveTo(-9, -p.h + 1);
+    ctx.lineTo(9, -p.h + 1);
+    ctx.lineTo(10, -p.h - 3);
+    ctx.lineTo(5, -p.h);
+    ctx.lineTo(0, -p.h - 6);
+    ctx.lineTo(-5, -p.h);
+    ctx.lineTo(-10, -p.h - 3);
+    ctx.closePath();
+    ctx.fill();
+    // Jewel on crown
+    ctx.fillStyle = '#ff0000';
+    ctx.beginPath(); ctx.arc(0, -p.h - 2, 1.5, 0, Math.PI * 2); ctx.fill();
+    ctx.shadowBlur = 0;
+  }
+
+  // ── Sang Dewa: divine halo + crown ──
+  if (skinKey === 'sangdewa') {
+    // Halo ring
+    const haloAlpha = 0.5 + 0.3 * Math.sin(Date.now() / 500);
+    ctx.save();
+    ctx.globalAlpha = haloAlpha;
+    ctx.strokeStyle = '#ffcc00';
+    ctx.shadowColor = '#ffcc00';
+    ctx.shadowBlur = 12;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.ellipse(0, -p.h - 6, 12, 4, 0, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.restore();
+    // Crown
+    ctx.fillStyle = '#fff8d6';
+    ctx.shadowColor = '#ffcc00';
+    ctx.shadowBlur = 10;
+    ctx.beginPath();
+    ctx.moveTo(-9, -p.h + 1);
+    ctx.lineTo(9, -p.h + 1);
+    ctx.lineTo(11, -p.h - 4);
+    ctx.lineTo(6, -p.h);
+    ctx.lineTo(3, -p.h - 7);
+    ctx.lineTo(0, -p.h - 2);
+    ctx.lineTo(-3, -p.h - 7);
+    ctx.lineTo(-6, -p.h);
+    ctx.lineTo(-11, -p.h - 4);
+    ctx.closePath();
+    ctx.fill();
+    // Jewels
+    ctx.fillStyle = '#ff3300';
+    ctx.beginPath(); ctx.arc(0, -p.h - 1, 1.5, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#3366ff';
+    ctx.beginPath(); ctx.arc(-5, -p.h, 1, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(5, -p.h, 1, 0, Math.PI * 2); ctx.fill();
+    ctx.shadowBlur = 0;
+  }
+
+  // ── Eyes (all skins) ──
+  ctx.fillStyle = skin.eyes;
+  ctx.shadowColor = skin.eyes;
+  ctx.shadowBlur = 4;
+  ctx.beginPath(); ctx.arc(-3, -p.h + 6, 1.2, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.arc(3, -p.h + 6, 1.2, 0, Math.PI * 2); ctx.fill();
+  ctx.shadowBlur = 0;
 
   // Arm & Sword
   ctx.save();
@@ -975,8 +1351,14 @@ function drawPlayer() {
   ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(8, 8); ctx.lineTo(16, 2); ctx.stroke();
 
   // Sleeve
-  ctx.strokeStyle = '#3a2010'; ctx.lineWidth = 6;
+  ctx.strokeStyle = skin.armor; ctx.lineWidth = 6;
   ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(8, 8); ctx.stroke();
+
+  // ── Prajurit / Ksatria: arm gauntlet ──
+  if (skinKey === 'praajurit' || skinKey === 'ksatria') {
+    ctx.strokeStyle = skin.headband; ctx.lineWidth = 4;
+    ctx.beginPath(); ctx.moveTo(6, 6); ctx.lineTo(14, 2); ctx.stroke();
+  }
 
   // Sword
   ctx.save();
@@ -1014,6 +1396,12 @@ function drawPlayer() {
     ctx.beginPath(); ctx.ellipse(-8, -p.h * 0.5, 8, 20, 0.2, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
     ctx.shadowBlur = 0;
   }
+
+  // ── Sang Dewa: divine sparkles around player ──
+  if (skinKey === 'sangdewa' && Math.random() < 0.15) {
+    spawnParticles(p.x - camX + (Math.random() - 0.5) * 30, p.y - p.h * Math.random(), '#ffcc44', 1, 1.5);
+  }
+
   ctx.restore();
 }
 
@@ -1270,6 +1658,7 @@ function updateHUD() {
   // HP
   const pct = Math.max(0, player.hp / player.maxHp);
   document.getElementById('hud-hp-fill').style.width = (pct * 100) + '%';
+
   document.getElementById('hud-hp-fill').style.background =
     pct > 0.6 ? 'linear-gradient(90deg,#3ddc84,#5dfc9a)' :
       pct > 0.3 ? 'linear-gradient(90deg,#f0c040,#f0e060)' :
@@ -1283,6 +1672,21 @@ function updateHUD() {
   document.getElementById('hud-stage-num').textContent = state.stage;
   document.getElementById('hud-score-num').textContent = state.score.toLocaleString();
   document.getElementById('hud-kill-num').textContent = state.totalKills;
+  // Skin name badge
+  const skinEl = document.getElementById('hud-skin-name');
+  if (skinEl) {
+    const sk = getSkin();
+    skinEl.textContent = sk.name;
+    skinEl.style.color = SKINS[state.selectedSkin]?.tabard || '#c9a84c';
+  }
+  // Difficulty badge
+  const diffEl = document.getElementById('hud-diff-badge');
+  if (diffEl) {
+    const diffColors = { easy: '#3ddc84', normal: '#c9a84c', hard: '#ff8844', insane: '#ff3333' };
+    const diffNames  = { easy: 'MUDAH', normal: 'NORMAL', hard: 'SULIT', insane: 'GILA' };
+    diffEl.textContent = diffNames[state.difficulty] || 'NORMAL';
+    diffEl.style.color = diffColors[state.difficulty] || '#c9a84c';
+  }
   // Boss HP
   const boss = enemies.find(e => (e.type === 'bossObsidian' || e.type === 'bossMalachar') && !e.dead);
   const bossHud = document.getElementById('boss-hud');
@@ -1380,6 +1784,7 @@ function gameLoop(timestamp) {
   drawParticles();
   drawDmgNums();
   drawUpgradeFlash();
+  drawSkinUnlockNotif();
   drawComboAndAction();
 
   // HUD
@@ -1431,6 +1836,8 @@ function showMenu() {
   state.screen = 'menu';
   showScreen('menu-screen');
   AudioManager.stopBg();
+  renderSkinButtons();
+  renderDifficultyButtons();
 }
 
 function showStory(idx, afterFn) {
@@ -1447,6 +1854,10 @@ function showStory(idx, afterFn) {
 
 function startStage(stage) {
   state.stage = stage;
+  state.maxStageReached = Math.max(state.maxStageReached || 1, stage);
+  saveProgress();
+  maybeUnlockSkinsWithNotif(); // Re-check if reaching new stage unlocks a skin
+
   state.screen = 'game';
   state.stageKills = 0;
   particles.length = 0;
@@ -1455,8 +1866,16 @@ function startStage(stage) {
   upgradeFlashTimer = 0;
   camX = 0;
   bgOffset = 0;
+
+  // Apply difficulty before spawning entities
+  applyDifficulty();
+
   resetPlayer();
+  // Re-apply player stats after resetPlayer()
+  applyDifficulty(true);
+
   initWaves(stage);
+
   showScreen('game-screen');
   updateHUD();
   startGameLoop();
@@ -1466,6 +1885,12 @@ function showStageClear() {
   gameRunning = false;
   state.screen = 'stageclear';
   showScreen('stage-clear-screen');
+
+  // progression: count cleared stage history
+  state.totalStagesCleared++;
+  maybeUnlockSkinsWithNotif();
+  saveProgress();
+
   document.getElementById('sc-stage-num').textContent = `STAGE ${state.stage}`;
   document.getElementById('sc-kills').textContent = state.stageKills;
   document.getElementById('sc-score').textContent = state.score.toLocaleString();
@@ -1741,6 +2166,101 @@ document.getElementById('btn-mute').addEventListener('click', () => {
   btn.classList.toggle('muted', nowMuted);
 });
 
+// ─── SKIN & DIFFICULTY UI ─────────────────────────────────────────────────────
+const SKIN_UNLOCK_HINTS = {
+  default: 'Skin awal — Penjual Jagung.',
+  praajurit: 'Capai stage 5 untuk membuka.',
+  ksatria: 'Capai stage 7 untuk membuka.',
+  sangraja: 'Selesaikan total 32 stage (bisa berulang) untuk membuka.',
+  sangdewa: 'Kalahkan Raja Obsidian & Raja Malachar masing-masing 5× untuk membuka.',
+};
+
+const DIFF_LABELS = {
+  easy:   { title: 'Mudah',  tip: 'HP lebih tinggi, musuh lebih lemah.' },
+  normal: { title: 'Normal', tip: 'Pengalaman standar.' },
+  hard:   { title: 'Sulit',  tip: 'HP berkurang, musuh lebih kuat & cepat.' },
+  insane: { title: 'Gila',   tip: 'Ekstrem! HP sangat rendah, musuh mematikan.' },
+};
+
+function renderSkinButtons() {
+  const container = document.getElementById('skin-options');
+  if (!container) return;
+  container.innerHTML = '';
+  const skinKeys = Object.keys(SKINS);
+  for (const key of skinKeys) {
+    const sk = SKINS[key];
+    const unlocked = !!state.unlockedSkins[key];
+    const selected = state.selectedSkin === key;
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'config-btn';
+    if (selected) btn.classList.add('selected');
+    if (!unlocked) btn.classList.add('disabled');
+    btn.dataset.skin = key;
+    const swatchHtml = unlocked ? '' : '🔒 ';
+    btn.innerHTML = swatchHtml + sk.name;
+    btn.title = unlocked ? `${sk.name} — klik untuk memilih` : SKIN_UNLOCK_HINTS[key];
+    btn.onclick = () => {
+      if (!state.unlockedSkins[key]) return;
+      state.selectedSkin = key;
+      saveProgress();
+      renderSkinButtons();
+      AudioManager.play('menuClick');
+    };
+    container.appendChild(btn);
+  }
+  // Update hint text
+  const hintEl = document.getElementById('skin-hint');
+  if (hintEl) {
+    const currentHint = SKIN_UNLOCK_HINTS[state.selectedSkin] || '';
+    const progressLines = [];
+    progressLines.push(`Stage diselesaikan: ${state.totalStagesCleared}`);
+    progressLines.push(`Raja Obsidian dikalahkan: ${state.bossObsidianDefeated}/5`);
+    progressLines.push(`Raja Malachar dikalahkan: ${state.bossMalacharDefeated}/5`);
+    hintEl.innerHTML = `<span style="color:var(--gold)">${SKINS[state.selectedSkin]?.name || 'Penjual Jagung'}</span> — ${currentHint}<br><span style="font-size:0.78em;opacity:0.7">${progressLines.join(' · ')}</span>`;
+  }
+}
+
+function renderDifficultyButtons() {
+  const container = document.getElementById('difficulty-options');
+  if (!container) return;
+  const buttons = container.querySelectorAll('.config-btn');
+  buttons.forEach(btn => {
+    const diff = btn.dataset.difficulty;
+    btn.classList.toggle('selected', state.difficulty === diff);
+    const info = DIFF_LABELS[diff];
+    if (info) btn.title = info.tip;
+    btn.onclick = () => {
+      state.difficulty = diff;
+      renderDifficultyButtons();
+      updateDifficultyHint();
+      AudioManager.play('menuClick');
+    };
+  });
+  updateDifficultyHint();
+}
+
+function updateDifficultyHint() {
+  // Show difficulty description below the difficulty card if element exists
+  const info = DIFF_LABELS[state.difficulty];
+  if (!info) return;
+  let el = document.getElementById('difficulty-hint');
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'difficulty-hint';
+    el.className = 'config-hint';
+    const card = document.querySelector('#difficulty-options')?.parentElement;
+    if (card) card.appendChild(el);
+  }
+  el.textContent = `${info.title}: ${info.tip}`;
+}
+
+// (skin unlock notification + maybeUnlockSkinsWithNotif defined earlier, near maybeUnlockSkins)
+
 // ─── BOOT ─────────────────────────────────────────────────────────────────────
+loadProgress();
+maybeUnlockSkins();
+renderSkinButtons();
+renderDifficultyButtons();
 if (window.lucide) lucide.createIcons();
 showMenu();
