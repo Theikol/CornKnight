@@ -6,9 +6,9 @@ const GRAVITY = 0.55, FRICTION = 0.82, JUMP_FORCE = -13;
 const GROUND_Y = H - 80;
 
 const SWORD_DATA = [
-  { name: 'Pisau Jagung', stars: 1, dmg: 12, color: '#aaaaaa', glow: 'rgba(170,170,170,0.6)' },
-  { name: 'Pedang Besi', stars: 2, dmg: 20, color: '#88aacc', glow: 'rgba(136,170,204,0.6)' },
-  { name: 'Pedang Baja', stars: 3, dmg: 32, color: '#44aaff', glow: 'rgba(68,170,255,0.7)' },
+  { name: 'Pisau Jagung', stars: 1, dmg: 7, color: '#aaaaaa', glow: 'rgba(170,170,170,0.6)' },
+  { name: 'Golok Mintul', stars: 2, dmg: 12, color: '#88aacc', glow: 'rgba(136,170,204,0.6)' },
+  { name: 'Pedang Baja', stars: 3, dmg: 19, color: '#44aaff', glow: 'rgba(68,170,255,0.7)' },
   { name: 'Pedang Rune', stars: 4, dmg: 50, color: '#aa44ff', glow: 'rgba(170,68,255,0.8)' },
   { name: 'Pedang Legenda', stars: 5, dmg: 80, color: '#ffcc00', glow: 'rgba(255,204,0,0.9)' },
 ];
@@ -24,14 +24,14 @@ const STORY_ACTS = [
   },
   {
     act: 'Babak 2',
-    title: 'Harga Sebuah Cinta',
-    text: 'Digerakkan oleh cinta yang buta dan tekad yang membara, Aratha mendaftarkan dirinya. Di antara para ksatria berzirah emas yang mencibirnya, ia berdiri tegap. Raja Malachar membisikkan syarat yang mustahil: "Bawa kepala Raja Obsidian ke hadapanku, atau gagak akan memakan jasadmu." Dengan pedang usang di tangan, Aratha meninggalkan ladang jagungnya, siap menghadapi takdir berdarahnya.',
+    title: 'Demi Sebuah Cinta',
+    text: 'Digerakkan oleh cinta yang buta, Aratha melangkah maju ke alun-alun istana, mendaftarkan namanya. Raja Malachar tertawa meremehkan melihat tangan kasar yang hanya terbiasa mengupas jagung itu. Lyra memohon dengan air mata agar ayahnya membatalkan niat Aratha. Namun, Raja justru melihat kesempatan untuk membuangnya. Raja mencengkeram kerah Aratha dan membisikkan syarat mustahil: "Bawa kepala Raja Obsidwyr ke hadapanku, dan arak mengelilingi desa. Jika berhasil, tahtaku dan putriku milikmu. Jika gagal, matilah." Aratha pun memulai perjalanan mautnya.',
     bg: '#0a0a1a'
   },
   {
     act: 'Babak 3',
     title: 'Darah, Keringat, dan Air Mata',
-    text: 'Perjalanan panjang membawa Aratha menembus hutan terlarang yang dipenuhi monster. Tangannya yang dulu melepuh karena air mendidih kini hancur dan berdarah karena mengayunkan pedang ribuan kali. Setiap kali ia merasa ingin menyerah, bayangan senyum Lyra menjadi satu-satunya penyala semangat agar jantungnya tetap berdetak. Kini, ia tiba di gerbang Obsidian, di mana Raja Obsidian telah menantinya.',
+    text: 'Untuk mencapai jantung Kerajaan Obsidwyr tanpa disadari, Aratha harus menghabisi semua prajurit yang setara dewa zeus di Balai Obsidwyr yang mencekam. Bau darah dan keputusasaan menguar. Di kedalaman perjalanan kelam ini ia tidak hanya menghadapi prajurit bayangan musuh, melainkan juga Ksatria Kegelapan—sang algojo neraka yang tak kenal ampun. Berkali-kali Aratha tersungkur, namun bayangan senyum Lyra menjadi satu-satunya alasan pemuda penjual jagung ini bangkit dan mengangkat pedangnya lagi.',
     bg: '#0a1a05'
   },
   {
@@ -1435,18 +1435,155 @@ function showGameOver() {
   AudioManager.stopBg();
 }
 
+let endingAnimState = null;
+
 function showEnding() {
   gameRunning = false;
-  state.screen = 'ending';
-  showScreen('ending-screen');
-  document.getElementById('ending-text').textContent =
-    'Langit senja Ardenwyr memerah, menyambut kepulangan sang legenda. ' +
-    'Aratha, si penjual jagung yang dulu diremehkan, berdiri di atas tahta Malachar yang gemetar. ' +
-    'Lyra berlari memeluknya. Cinta yang lahir dari sebutir jagung rebus, ' +
-    'telah mengubah seorang pemuda biasa menjadi Raja Ardenwyr yang sesungguhnya. ' +
-    'Kerajaan Obsidian telah takluk. Janji telah ditepati. Legenda dimulai.';
-  AudioManager.play('stageClear');
   AudioManager.stopBg();
+  AudioManager.play('stageClear');
+
+  state.screen = 'ending-anim';
+  document.querySelectorAll('.screen').forEach(s => {
+    s.classList.remove('active');
+    s.style.display = 'none';
+  });
+  const gs = document.getElementById('game-screen');
+  gs.style.display = 'flex';
+  requestAnimationFrame(() => gs.classList.add('active'));
+  document.getElementById('hud').style.display = 'none';
+  document.getElementById('boss-hud').style.display = 'none';
+  document.getElementById('pause-overlay').style.display = 'none';
+  
+  endingAnimState = {
+    aratha: { x: -50, y: GROUND_Y, animFrame: 0, frameTimer: 0 },
+    lyra: { x: W/2, y: GROUND_Y },
+    crown: { y: -50, alpha: 0 },
+    phase: 0, 
+    timer: 0
+  };
+  
+  requestAnimationFrame(endingLoop);
+}
+
+function endingLoop() {
+  if (state.screen !== 'ending-anim') return;
+  
+  ctx.clearRect(0, 0, W, H);
+  
+  const oldCam = camX;
+  camX = 0; 
+  drawBackground(10);
+  
+  if (endingAnimState.phase === 0) {
+    endingAnimState.aratha.x += 1.5;
+    endingAnimState.aratha.frameTimer++;
+    if (endingAnimState.aratha.frameTimer > 8) {
+      endingAnimState.aratha.frameTimer = 0;
+      endingAnimState.aratha.animFrame = (endingAnimState.aratha.animFrame + 1) % 4;
+    }
+    if (endingAnimState.aratha.x >= endingAnimState.lyra.x - 40) {
+      endingAnimState.phase = 1;
+    }
+  } else if (endingAnimState.phase === 1) {
+    endingAnimState.aratha.animFrame = 0; 
+    endingAnimState.crown.y += 1;
+    if (endingAnimState.crown.y >= endingAnimState.aratha.y - 70) { 
+      endingAnimState.crown.y = endingAnimState.aratha.y - 70;
+      endingAnimState.timer++;
+      if (endingAnimState.timer > 90) {
+        endingAnimState.phase = 2;
+        endingAnimState.timer = 0;
+      }
+    }
+  } else if (endingAnimState.phase === 2) {
+    endingAnimState.timer++;
+    if (endingAnimState.timer > 150) {
+      showEndingScreenOverlay();
+      return;
+    }
+  }
+  
+  drawLyra(endingAnimState.lyra.x, endingAnimState.lyra.y);
+  
+  const oldP = { ...player };
+  player.x = endingAnimState.aratha.x;
+  player.y = endingAnimState.aratha.y;
+  player.animFrame = endingAnimState.aratha.animFrame;
+  player.animState = endingAnimState.phase === 0 ? 'run' : 'idle';
+  player.attackTimer = 0;
+  player.invTimer = 0;
+  player.facingRight = true;
+  drawPlayer();
+  Object.assign(player, oldP);
+  
+  if (endingAnimState.phase > 0) {
+    drawCrown(endingAnimState.aratha.x, endingAnimState.crown.y);
+  }
+  
+  if (endingAnimState.phase === 2) {
+    const alpha = Math.min(0.8, endingAnimState.timer / 100);
+    ctx.fillStyle = `rgba(0,0,0,${alpha})`;
+    ctx.fillRect(0, 0, W, H);
+  }
+  
+  requestAnimationFrame(endingLoop);
+}
+
+function drawLyra(x, y) {
+  ctx.save();
+  ctx.translate(x, y);
+  
+  ctx.fillStyle = '#f8f8f8';
+  ctx.beginPath();
+  ctx.moveTo(0, -40);
+  ctx.lineTo(-12, 0);
+  ctx.lineTo(12, 0);
+  ctx.fill();
+  
+  ctx.fillStyle = '#e8d5a3'; 
+  ctx.beginPath(); ctx.arc(0, -45, 6, 0, Math.PI*2); ctx.fill(); 
+  
+  ctx.fillStyle = '#ffcc44';
+  ctx.beginPath(); ctx.arc(0, -47, 7, Math.PI*0.8, Math.PI*2.2); ctx.fill();
+  ctx.fillRect(-8, -45, 4, 15); 
+  
+  ctx.strokeStyle = '#e8d5a3'; ctx.lineWidth = 3; ctx.lineCap = 'round';
+  ctx.beginPath(); ctx.moveTo(-4, -38); ctx.lineTo(-8, -25); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(4, -38); ctx.lineTo(8, -25); ctx.stroke();
+  
+  ctx.restore();
+}
+
+function drawCrown(x, y) {
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.fillStyle = '#ffcc00';
+  ctx.shadowColor = '#ffcc00';
+  ctx.shadowBlur = 15;
+  ctx.beginPath();
+  ctx.moveTo(-10, 0);
+  ctx.lineTo(10, 0);
+  ctx.lineTo(12, -8);
+  ctx.lineTo(6, -4);
+  ctx.lineTo(0, -12);
+  ctx.lineTo(-6, -4);
+  ctx.lineTo(-12, -8);
+  ctx.closePath();
+  ctx.fill();
+  ctx.shadowBlur = 0;
+  ctx.fillStyle = '#ff0000';
+  ctx.beginPath(); ctx.arc(0, -6, 2, 0, Math.PI*2); ctx.fill();
+  ctx.restore();
+}
+
+function showEndingScreenOverlay() {
+  state.screen = 'ending';
+  const screen = document.getElementById('ending-screen');
+  screen.style.display = 'flex';
+  requestAnimationFrame(() => { screen.classList.add('active'); });
+  
+  document.getElementById('ending-text').textContent =
+    "Dengan berakhirnya tirani, Raja Malachar menyerahkan tahtanya dengan damai. Aratha menjemput Putri Lyra, cinta sejatinya, dan dinobatkan menjadi Raja Ardenwyr. Kisah penjual jagung yang menjadi legenda akan diceritakan turun-temurun, membawa kedamaian abadi bagi seluruh rakyat.";
 }
 
 // ─── BUTTON WIRING ────────────────────────────────────────────────────────────
