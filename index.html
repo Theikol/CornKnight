@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="id">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Ardenwyr: Pedang Sang Penjual Jagung</title>
+  <meta name="description"
+    content="Game aksi 2D semi-3D bergaya Metal Slug dengan tema kerajaan. Ikuti perjalanan Aratha, penjual jagung yang berjuang demi cinta dan kehormatan." />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link
+    href="https://fonts.googleapis.com/css2?family=MedievalSharp&family=Cinzel:wght@400;700;900&family=Cinzel+Decorative:wght@400;700&family=IM+Fell+English:ital@0;1&display=swap"
+    rel="stylesheet" />
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <link rel="stylesheet" href="style.css" />
+</head>
+
+<body>
+  <div id="game-container">
+    <!-- Story Screen -->
+    <div id="story-screen" class="screen active">
+      <div id="story-bg"></div>
+      <div id="story-overlay"></div>
+      <div id="story-content">
+        <div id="story-act-label"></div>
+        <h1 id="story-title"></h1>
+        <div id="story-text-box">
+          <p id="story-text"></p>
+        </div>
+        <button id="story-continue-btn">Lanjutkan <i data-lucide="arrow-right" class="icon"></i></button>
+      </div>
+    </div>
+
+    <!-- Main Menu Screen -->
+    <div id="menu-screen" class="screen">
+      <div id="menu-bg">
+        <div class="menu-parallax-layer" id="menu-far"></div>
+        <div class="menu-parallax-layer" id="menu-mid"></div>
+        <div class="menu-parallax-layer" id="menu-near"></div>
+      </div>
+      <div id="menu-content">
+        <div id="menu-emblem"><i data-lucide="swords" style="width: 80px; height: 80px; stroke-width: 1.5px;"></i></div>
+        <h1 id="menu-title">KING ARDENWYR</h1>
+        <h2 id="menu-subtitle">Sang Ksatria Pedagang Jagung </h2>
+        <div id="menu-buttons">
+          <button class="menu-btn" id="btn-play"><i data-lucide="swords" class="icon"></i> Mulai Petualangan</button>
+          <button class="menu-btn" id="btn-controls"><i data-lucide="gamepad-2" class="icon"></i> Panduan
+            Kontrol</button>
+          <button class="menu-btn" id="btn-lore"><i data-lucide="book-open" class="icon"></i> Legenda</button>
+        </div>
+      </div>
+      <div id="menu-footer">King Ardenwyr · Mang Ian</div>
+    </div>
+
+    <!-- Controls Screen -->
+    <div id="controls-screen" class="screen">
+      <div id="controls-bg"></div>
+      <div id="controls-content">
+        <h2 class="screen-title"><i data-lucide="scroll" class="icon-title"></i> Panduan Pertempuran</h2>
+        <div id="controls-grid">
+          <div class="control-card">
+            <span class="key-badge">Z</span>
+            <span class="control-name">Tebas</span>
+            <span class="control-desc">Serangan cepat maju</span>
+          </div>
+          <div class="control-card">
+            <span class="key-badge">X</span>
+            <span class="control-name">Tebas Ganda</span>
+            <span class="control-desc">Dua serangan beruntun</span>
+          </div>
+          <div class="control-card">
+            <span class="key-badge">SPASI + Z</span>
+            <span class="control-name">Tebas Berat & Loncat</span>
+            <span class="control-desc">Serangan kuat sembari melayang</span>
+          </div>
+          <div class="control-card">
+            <span class="key-badge">SPASI + X</span>
+            <span class="control-name">Tebasan Berputar</span>
+            <span class="control-desc">Serangan 360° menyapu sisi</span>
+          </div>
+          <div class="control-card">
+            <span class="key-badge">C</span>
+            <span class="control-name">Menahan Serangan</span>
+            <span class="control-desc">Kurangi damage yang diterima</span>
+          </div>
+          <div class="control-card">
+            <span class="key-badge">← →</span>
+            <span class="control-name">Bergerak</span>
+            <span class="control-desc">Bergerak kiri / kanan</span>
+          </div>
+          <div class="control-card">
+            <span class="key-badge">SPASI</span>
+            <span class="control-name">Meloncat</span>
+            <span class="control-desc">Lompat tinggi</span>
+          </div>
+        </div>
+        <button class="menu-btn" id="btn-back-controls"><i data-lucide="arrow-left" class="icon"></i> Kembali</button>
+      </div>
+    </div>
+
+    <!-- Game Canvas Screen -->
+    <div id="game-screen" class="screen">
+      <canvas id="game-canvas"></canvas>
+      <div id="hud">
+        <div id="hud-left">
+          <div id="hud-player-info">
+            <div id="hud-name">ARATHA</div>
+            <div id="hud-hp-bar-wrap">
+              <div id="hud-hp-label">HP</div>
+              <div id="hud-hp-track">
+                <div id="hud-hp-fill"></div>
+              </div>
+              <div id="hud-hp-num"></div>
+            </div>
+          </div>
+          <div id="hud-sword-info">
+            <div id="hud-sword-label">PEDANG</div>
+            <div id="hud-sword-stars"></div>
+            <div id="hud-sword-name"></div>
+          </div>
+        </div>
+        <div id="hud-center">
+          <div id="hud-stage-label">STAGE</div>
+          <div id="hud-stage-num"></div>
+        </div>
+        <div id="hud-right">
+          <div id="hud-score-label">NILAI</div>
+          <div id="hud-score-num">0</div>
+          <div id="hud-kill-label">MUSUH GUGUR</div>
+          <div id="hud-kill-num">0</div>
+          <button id="btn-mute" title="Toggle Mute"><i data-lucide="volume-2" id="mute-icon"></i></button>
+        </div>
+      </div>
+      <div id="combo-display"></div>
+      <div id="action-label"></div>
+      <div id="boss-hud" style="display:none">
+        <div id="boss-name"></div>
+        <div id="boss-hp-track">
+          <div id="boss-hp-fill"></div>
+        </div>
+      </div>
+      <div id="pause-overlay" style="display:none">
+        <div id="pause-box">
+          <h2><i data-lucide="pause-circle" class="icon-title"></i> JEDA</h2>
+          <button class="menu-btn" id="btn-resume">Lanjutkan</button>
+          <button class="menu-btn" id="btn-quit-game">Keluar ke Menu</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Stage Clear Screen -->
+    <div id="stage-clear-screen" class="screen">
+      <div id="sc-content">
+        <div id="sc-glow"></div>
+        <h2 id="sc-title">STAGE SELESAI!</h2>
+        <div id="sc-stage-num"></div>
+        <div id="sc-stats">
+          <div class="sc-stat"><span>Musuh Gugur</span><span id="sc-kills"></span></div>
+          <div class="sc-stat"><span>Nilai</span><span id="sc-score"></span></div>
+          <div class="sc-stat"><span>Pedang</span><span id="sc-sword"></span></div>
+        </div>
+        <div id="sc-upgrade-msg"></div>
+        <button class="menu-btn" id="btn-next-stage">Stage Berikutnya <i data-lucide="arrow-right"
+            class="icon"></i></button>
+      </div>
+    </div>
+
+    <!-- Game Over Screen -->
+    <div id="gameover-screen" class="screen">
+      <div id="go-content">
+        <h2 id="go-title">GUGUR DI MEDAN LAGA</h2>
+        <p id="go-quote"></p>
+        <button class="menu-btn" id="btn-retry"><i data-lucide="rotate-ccw" class="icon"></i> Coba Lagi</button>
+        <button class="menu-btn" id="btn-go-menu"><i data-lucide="home" class="icon"></i> Menu Utama</button>
+      </div>
+    </div>
+
+    <!-- Ending Screen -->
+    <div id="ending-screen" class="screen">
+      <div id="ending-content">
+        <div id="ending-glow"></div>
+        <h1 id="ending-title">ARDENWYR MERDEKA</h1>
+        <p id="ending-text"></p>
+        <button class="menu-btn" id="btn-ending-menu"><i data-lucide="home" class="icon"></i> Menu Utama</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="audio.js"></script>
+  <script src="game.js"></script>
+</body>
+
+</html>
