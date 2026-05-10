@@ -75,33 +75,73 @@ const state = {
 const keys = {};
 const justPressed = {};
 const justReleased = {};
+const playableKeyCodes = new Set(['Space', 'ArrowLeft', 'ArrowRight', 'ArrowUp', 'KeyZ', 'KeyX', 'KeyC']);
+
+function pressKey(code) {
+  if (!keys[code]) justPressed[code] = true;
+  keys[code] = true;
+}
+
+function releaseKey(code) {
+  if (keys[code]) justReleased[code] = true;
+  keys[code] = false;
+}
+
 window.addEventListener('keydown', e => {
-  if (!keys[e.code]) justPressed[e.code] = true;
-  keys[e.code] = true;
-  if (['Space', 'ArrowLeft', 'ArrowRight', 'ArrowUp', 'KeyZ', 'KeyX', 'KeyC'].includes(e.code)) e.preventDefault();
+  pressKey(e.code);
+  if (playableKeyCodes.has(e.code)) e.preventDefault();
 });
 window.addEventListener('keyup', e => {
-  keys[e.code] = false;
-  justReleased[e.code] = true;
+  releaseKey(e.code);
 });
 function clearJust() {
   for (const k in justPressed) delete justPressed[k];
   for (const k in justReleased) delete justReleased[k];
 }
 
+const virtualTouches = new Map();
+
+function releaseVirtualControls() {
+  for (const code of virtualTouches.values()) releaseKey(code);
+  virtualTouches.clear();
+  document.querySelectorAll('.mobile-control-btn.pressed').forEach(btn => btn.classList.remove('pressed'));
+}
+
+window.addEventListener('blur', releaseVirtualControls);
+
 // ─── CANVAS ───────────────────────────────────────────────────────────────────
 const canvas = document.getElementById('game-canvas');
 const ctx = canvas.getContext('2d');
 function resizeCanvas() {
-  const ratio = Math.min(window.innerWidth / W, window.innerHeight / H);
-  canvas.style.width = (W * ratio) + 'px';
-  canvas.style.height = (H * ratio) + 'px';
-  canvas.style.left = ((window.innerWidth - W * ratio) / 2) + 'px';
-  canvas.style.top = ((window.innerHeight - H * ratio) / 2) + 'px';
+  const viewportW = window.visualViewport?.width || window.innerWidth;
+  const viewportH = window.visualViewport?.height || window.innerHeight;
+  const touchLayout = window.matchMedia ? window.matchMedia('(hover: none) and (pointer: coarse)').matches : false;
+  const portraitTouch = touchLayout && viewportH > viewportW;
+  let usableH = viewportH;
+
+  if (portraitTouch) {
+    usableH = Math.max(260, viewportH - Math.min(190, Math.max(140, viewportH * 0.23)));
+  }
+
+  const ratio = Math.min(viewportW / W, usableH / H);
+  const canvasW = W * ratio;
+  const canvasH = H * ratio;
+  let canvasTop = (viewportH - canvasH) / 2;
+
+  if (portraitTouch) {
+    canvasTop = Math.max(74, Math.min((usableH - canvasH) / 2 + 34, viewportH - canvasH - 150));
+  }
+
+  canvas.style.width = canvasW + 'px';
+  canvas.style.height = canvasH + 'px';
+  canvas.style.left = ((viewportW - canvasW) / 2) + 'px';
+  canvas.style.top = canvasTop + 'px';
   canvas.width = W;
   canvas.height = H;
 }
 window.addEventListener('resize', resizeCanvas);
+window.addEventListener('orientationchange', resizeCanvas);
+window.visualViewport?.addEventListener('resize', resizeCanvas);
 resizeCanvas();
 
 // ─── PARTICLES ────────────────────────────────────────────────────────────────
@@ -1363,8 +1403,18 @@ function startGameLoop() {
   requestAnimationFrame(gameLoop);
 }
 
+function setPaused(paused) {
+  if (state.screen !== 'game') return;
+  state.paused = paused;
+  releaseVirtualControls();
+  document.getElementById('pause-overlay').style.display = paused ? 'flex' : 'none';
+  if (paused) AudioManager.stopBg();
+  else AudioManager.startBg();
+}
+
 // ─── SCREEN TRANSITIONS ───────────────────────────────────────────────────────
 function showScreen(id) {
+  releaseVirtualControls();
   document.querySelectorAll('.screen').forEach(s => {
     s.classList.remove('active');
     s.style.display = 'none';
@@ -1373,6 +1423,7 @@ function showScreen(id) {
   el.style.display = 'flex';
   requestAnimationFrame(() => { el.classList.add('active'); });
   if (window.lucide) lucide.createIcons();
+  resizeCanvas();
 }
 
 function showMenu() {
@@ -1601,13 +1652,12 @@ document.getElementById('btn-controls').onclick = () => { AudioManager.play('men
 document.getElementById('btn-lore').onclick = () => { AudioManager.play('menuClick'); showStory(0, showMenu); };
 document.getElementById('btn-back-controls').onclick = () => { AudioManager.play('menuClick'); showScreen('menu-screen'); };
 document.getElementById('btn-resume').onclick = () => {
-  state.paused = false;
-  document.getElementById('pause-overlay').style.display = 'none';
-  AudioManager.startBg();
+  setPaused(false);
 };
 document.getElementById('btn-quit-game').onclick = () => {
   gameRunning = false;
   state.paused = false;
+  releaseVirtualControls();
   document.getElementById('pause-overlay').style.display = 'none';
   showMenu();
 };
@@ -1634,12 +1684,53 @@ document.getElementById('btn-ending-menu').onclick = showMenu;
 // Escape = pause / resume
 window.addEventListener('keydown', e => {
   if (e.code === 'Escape' && state.screen === 'game') {
-    state.paused = !state.paused;
-    document.getElementById('pause-overlay').style.display = state.paused ? 'flex' : 'none';
-    if (state.paused) AudioManager.stopBg();
-    else AudioManager.startBg();
+    setPaused(!state.paused);
   }
 });
+
+function bindMobileControls() {
+  const controls = document.getElementById('mobile-controls');
+  if (!controls || !window.PointerEvent) return;
+
+  controls.querySelectorAll('[data-key]').forEach(button => {
+    const code = button.dataset.key;
+
+    button.addEventListener('pointerdown', e => {
+      if (state.screen !== 'game' || state.paused) return;
+      e.preventDefault();
+      virtualTouches.set(e.pointerId, code);
+      pressKey(code);
+      button.classList.add('pressed');
+      if (button.setPointerCapture) button.setPointerCapture(e.pointerId);
+    }, { passive: false });
+
+    const releaseTouch = e => {
+      e.preventDefault();
+      const activeCode = virtualTouches.get(e.pointerId);
+      if (activeCode) releaseKey(activeCode);
+      virtualTouches.delete(e.pointerId);
+      button.classList.remove('pressed');
+      if (button.releasePointerCapture && button.hasPointerCapture(e.pointerId)) {
+        button.releasePointerCapture(e.pointerId);
+      }
+    };
+
+    button.addEventListener('pointerup', releaseTouch, { passive: false });
+    button.addEventListener('pointercancel', releaseTouch, { passive: false });
+    button.addEventListener('contextmenu', e => e.preventDefault());
+  });
+
+  const pauseButton = document.getElementById('btn-mobile-pause');
+  if (pauseButton) {
+    pauseButton.addEventListener('pointerdown', e => {
+      e.preventDefault();
+      if (state.screen === 'game') setPaused(!state.paused);
+    }, { passive: false });
+    pauseButton.addEventListener('contextmenu', e => e.preventDefault());
+  }
+}
+
+bindMobileControls();
 
 // Mute button
 document.getElementById('btn-mute').addEventListener('click', () => {
