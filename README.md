@@ -41,11 +41,14 @@ Di pasar kumuh Kerajaan Ardenwyr, Aratha hanyalah seorang penjual jagung rebus. 
 
 Karena tidak ada aset file gambar atau suara yang harus dimuat dari sistem file (CORS issue), Anda bisa menjalankan game ini hanya dengan mengklik ganda file `index.html` di browser modern apa pun (Chrome, Firefox, Edge, Safari).
 
+Untuk bermain di web:
+<https://corn-knight.vercel.app/>
+
 Jika ingin menjalankannya lewat server lokal, Anda dapat menggunakan modul python:
 ```bash
 python -m http.server 8080
 ```
-Lalu buka `http://localhost:8080/index.html` di web browser Anda.
+Lalu buka `http://localhost:8080/index.html` di web browser Anda. Jangan ragu untuk berkolaborasi untuk pengembangan game ini lebih lanjut :)
 
 ---
 _Dibuat dengan cinta dan dedikasi. "Pedang bisa patah, namun tekad tidak."_
